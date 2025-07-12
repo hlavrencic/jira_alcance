@@ -37,8 +37,8 @@ MANIFEST
 # REPORTES GENERADOS (OPCIONAL)
 # ==========================================
 # Descomenta las siguientes líneas si no quieres subir reportes
-# reports/*.xlsx
-# reports/*.csv
+reports/*.xlsx
+reports/*.csv
 
 # ==========================================
 # ENTORNOS VIRTUALES
