@@ -253,10 +253,7 @@ class JiraDataExtractor:
         time_data = {
             'time_spent': 0.0,
             'original_estimate': 0.0, 
-            'remaining_estimate': 0.0,
-            'time_spent_seconds': 0,
-            'original_estimate_seconds': 0,
-            'remaining_estimate_seconds': 0
+            'remaining_estimate': 0.0
         }
         
         if hasattr(issue.fields, 'timetracking') and issue.fields.timetracking:
@@ -265,19 +262,16 @@ class JiraDataExtractor:
             # Tiempo gastado
             if hasattr(tt, 'timeSpentSeconds') and tt.timeSpentSeconds:
                 seconds = tt.timeSpentSeconds
-                time_data['time_spent_seconds'] = seconds
                 time_data['time_spent'] = round(seconds / 3600, 1)
             
             # Estimación original
             if hasattr(tt, 'originalEstimateSeconds') and tt.originalEstimateSeconds:
                 seconds = tt.originalEstimateSeconds
-                time_data['original_estimate_seconds'] = seconds
                 time_data['original_estimate'] = round(seconds / 3600, 1)
             
             # Tiempo restante
             if hasattr(tt, 'remainingEstimateSeconds') and tt.remainingEstimateSeconds:
                 seconds = tt.remainingEstimateSeconds
-                time_data['remaining_estimate_seconds'] = seconds
                 time_data['remaining_estimate'] = round(seconds / 3600, 1)
         
         return time_data
@@ -419,8 +413,8 @@ class JiraDataExtractor:
         
         # Métricas generales
         total_issues = len(data)
-        total_time_spent = sum(item['time_spent_seconds'] for item in data)
-        total_estimated = sum(item['original_estimate_seconds'] for item in data)
+        total_time_spent = sum(item['time_spent'] for item in data)
+        total_estimated = sum(item['original_estimate'] for item in data)
         
         # Tabla de métricas
         metrics_table = Table(title="📈 Métricas Generales", show_header=True)
@@ -428,8 +422,8 @@ class JiraDataExtractor:
         metrics_table.add_column("Valor", style="green")
         
         metrics_table.add_row("Total Issues", str(total_issues))
-        metrics_table.add_row("Tiempo Registrado", f"{total_time_spent/3600:.1f} horas")
-        metrics_table.add_row("Tiempo Estimado", f"{total_estimated/3600:.1f} horas")
+        metrics_table.add_row("Tiempo Registrado", f"{total_time_spent:.1f} horas")
+        metrics_table.add_row("Tiempo Estimado", f"{total_estimated:.1f} horas")
         
         if total_estimated > 0:
             progress = (total_time_spent / total_estimated) * 100
