@@ -290,7 +290,11 @@ class JiraDataExtractor:
         # Para subtareas: usar parent_key, para el resto: usar key del issue
         parent_value = parent_key if is_subtask else issue.key
         
+        # Lógica para la columna Epic
+        epic_key = self._extract_epic_key(issue)
+        
         return {
+            'epic_key': epic_key,
             'feature': parent_value,
             'is_subtask': is_subtask,
             'parent_key': parent_key,
@@ -498,8 +502,14 @@ class JiraDataExtractor:
         # Crear DataFrame
         df = pd.DataFrame(data)
         
-        # Reordenar columnas: colocar 'feature' al principio
-        if 'feature' in df.columns:
+        # Reordenar columnas: colocar 'epic_key' al principio, luego 'feature'
+        if 'epic_key' in df.columns and 'feature' in df.columns:
+            columns = ['epic_key', 'feature'] + [col for col in df.columns if col not in ['epic_key', 'feature']]
+            df = df[columns]
+        elif 'epic_key' in df.columns:
+            columns = ['epic_key'] + [col for col in df.columns if col != 'epic_key']
+            df = df[columns]
+        elif 'feature' in df.columns:
             columns = ['feature'] + [col for col in df.columns if col != 'feature']
             df = df[columns]
         
@@ -1211,6 +1221,56 @@ class JiraDataExtractor:
             self.console.print(f"❌ [red]Error general obteniendo detalles de sprints: {str(e)}[/red]")
         
         return sprint_details
+
+    def _extract_epic_key(self, issue: Any) -> str:
+        """
+        Extrae la clave de la épica asociada al issue
+        
+        Args:
+            issue: Issue de Jira
+            
+        Returns:
+            Clave de la épica o 'Sin Epic' si no está asociado a ninguna
+        """
+        try:
+            # Si el issue ES una épica, devolver su propia clave
+            if hasattr(issue.fields, 'issuetype') and issue.fields.issuetype:
+                issue_type = issue.fields.issuetype.name.lower()
+                if 'epic' in issue_type or 'épica' in issue_type:
+                    return issue.key
+            
+            # Buscar el campo Epic Link - puede estar en diferentes campos personalizados
+            # Campos comunes donde se almacena la Epic Link
+            epic_fields = [
+                'customfield_10014',  # Campo común para Epic Link en Jira Cloud
+                'customfield_10008',  # Otro campo común
+                'customfield_10006',  # Otro campo común
+                'epic',               # Campo directo (si existe)
+                'epiclink',           # Variante del nombre
+                'parent'              # En algunos casos, el epic puede estar como parent
+            ]
+            
+            # Buscar en todos los campos personalizados que contengan 'epic'
+            for field_name, field_value in issue.fields.__dict__.items():
+                if field_value and ('epic' in field_name.lower() or field_name in epic_fields):
+                    # Si es un string directo (clave de la épica)
+                    if isinstance(field_value, str) and field_value.strip():
+                        return field_value.strip()
+                    
+                    # Si es un objeto con atributo 'key'
+                    if hasattr(field_value, 'key') and field_value.key:
+                        return field_value.key
+                    
+                    # Si es un objeto con atributo 'value'
+                    if hasattr(field_value, 'value') and field_value.value:
+                        return field_value.value
+            
+            # Si no se encontró épica, devolver valor por defecto
+            return 'Sin Epic'
+            
+        except Exception as e:
+            # En caso de error, devolver valor por defecto
+            return 'Sin Epic'
 
 
 def main():
