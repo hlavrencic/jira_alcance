@@ -25,8 +25,19 @@ JIRA_API_TOKEN = os.getenv('JIRA_API_TOKEN', '')
 
 DEFAULT_PROJECT = 'CMZ100'
 
-# Máximo número de issues a procesar por proyecto
-MAX_ISSUES_PER_PROJECT = 500
+# ==========================================
+# CONFIGURACIÓN DE PAGINACIÓN JIRA
+# ==========================================
+
+# Tamaño de página para consultas Jira (máximo permitido por la API)
+JIRA_PAGE_SIZE = 100  # Jira Cloud recomienda máximo 100 por página
+
+# Configuración de extracción completa
+EXTRACT_ALL_ISSUES = True  # True = extraer todos los issues, False = usar límites
+MAX_ISSUES_FALLBACK = 10000  # Límite de seguridad para evitar consultas infinitas
+
+# Tiempo de espera entre páginas (en segundos) para evitar rate limiting
+PAGE_DELAY = 0.1
 
 # ==========================================
 # CONFIGURACIÓN DE EXPORTACIÓN

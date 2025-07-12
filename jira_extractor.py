@@ -71,53 +71,137 @@ class JiraDataExtractor:
             self.console.print(f"❌ [red]Error de conexión: {str(e)}[/red]")
             return False
     
-    def search_project_issues(self, project_key: str, max_results: int = 200) -> List[Any]:
+    def search_project_issues(self, project_key: str, max_results: int = None) -> List[Any]:
         """
-        Busca issues del proyecto usando múltiples estrategias
+        Busca TODOS los issues del proyecto usando paginación automática
         
         Args:
             project_key: Clave del proyecto (ej: CMZ100)
-            max_results: Máximo número de resultados
+            max_results: Límite opcional (None = extraer todos los issues)
             
         Returns:
-            Lista de issues encontrados
+            Lista completa de issues encontrados
         """
+        import time  # Para delays entre páginas
+        
         self.console.print(f"🔍 [cyan]Buscando issues del proyecto {project_key}...[/cyan]")
         
-        # Estrategias de búsqueda en orden de prioridad
+        # Determinar si extraer todos o usar límite
+        extract_all = config.EXTRACT_ALL_ISSUES and max_results is None
+        safety_limit = max_results or config.MAX_ISSUES_FALLBACK
+        
+        if extract_all:
+            self.console.print("   🌐 [blue]Modo: Extracción completa (todos los issues)[/blue]")
+        else:
+            self.console.print(f"   📊 [blue]Modo: Límite de {safety_limit} issues[/blue]")
+        
+        # Estrategias de búsqueda JQL en orden de prioridad
         search_strategies = [
-            f'project = {project_key} AND status NOT IN (Cerrado, Finalizado, Done, Resolved) ORDER BY updated DESC',
-            f'project = {project_key} AND updated >= -60d ORDER BY created DESC',
-            f'project = {project_key} ORDER BY created DESC'
+            # 1. Issues activos primero
+            {
+                'jql': f'project = {project_key} AND status NOT IN (Cerrado, Finalizado, Done, Resolved, Closed) ORDER BY updated DESC',
+                'description': 'Issues activos'
+            },
+            # 2. Issues recientes (últimos 90 días)
+            {
+                'jql': f'project = {project_key} AND updated >= -90d ORDER BY updated DESC',
+                'description': 'Issues recientes (90 días)'
+            },
+            # 3. Todos los issues del proyecto
+            {
+                'jql': f'project = {project_key} ORDER BY created DESC',
+                'description': 'Todos los issues'
+            }
         ]
         
         all_issues = []
+        successful_strategy = None
         
-        for i, jql in enumerate(search_strategies, 1):
+        for i, strategy in enumerate(search_strategies, 1):
             try:
-                self.console.print(f"   📋 [dim]Estrategia {i}: Buscando issues...[/dim]")
+                self.console.print(f"   📋 [dim]Estrategia {i}: {strategy['description']}[/dim]")
                 
-                issues = self.jira.search_issues(
-                    jql, 
-                    maxResults=max_results,
-                    expand='changelog'
-                )
+                # Implementar paginación completa
+                start_at = 0
+                page_size = config.JIRA_PAGE_SIZE
+                strategy_issues = []
                 
-                if issues:
-                    self.console.print(f"   ✅ [green]Encontrados {len(issues)} issues[/green]")
-                    all_issues.extend(issues)
-                    
-                    # Si encontramos suficientes datos, no seguimos buscando
-                    if len(all_issues) >= 50:
+                while True:
+                    # Verificar límite de seguridad
+                    if len(strategy_issues) >= safety_limit:
+                        self.console.print(f"   🛡️ [yellow]Límite de seguridad alcanzado: {safety_limit} issues[/yellow]")
                         break
+                    
+                    # Calcular el tamaño de la página actual
+                    remaining = safety_limit - len(strategy_issues)
+                    current_page_size = min(page_size, remaining) if not extract_all else page_size
+                    
+                    self.console.print(f"   📄 [dim]Página: desde {start_at}, tamaño {current_page_size}[/dim]")
+                    
+                    # Hacer la consulta paginada
+                    page_issues = self.jira.search_issues(
+                        strategy['jql'],
+                        startAt=start_at,
+                        maxResults=current_page_size,
+                        expand='changelog'
+                    )
+                    
+                    # Si no hay más resultados, terminar
+                    if not page_issues:
+                        self.console.print(f"   ✅ [green]Fin de resultados en posición {start_at}[/green]")
+                        break
+                    
+                    # Agregar issues encontrados
+                    strategy_issues.extend(page_issues)
+                    total_found = len(strategy_issues)
+                    
+                    self.console.print(f"   📊 [green]+{len(page_issues)} issues (total: {total_found})[/green]")
+                    
+                    # Si la página devolvió menos issues que el solicitado, ya no hay más
+                    if len(page_issues) < current_page_size:
+                        self.console.print(f"   🏁 [green]Última página: {len(page_issues)} < {current_page_size}[/green]")
+                        break
+                    
+                    # Preparar siguiente página
+                    start_at += len(page_issues)
+                    
+                    # Pequeña pausa para evitar rate limiting
+                    if config.PAGE_DELAY > 0:
+                        time.sleep(config.PAGE_DELAY)
+                
+                # Si encontramos issues con esta estrategia, usarla
+                if strategy_issues:
+                    all_issues = strategy_issues
+                    successful_strategy = i
+                    self.console.print(f"   ✅ [bold green]Estrategia {i} exitosa: {len(all_issues)} issues totales[/bold green]")
+                    break
                 else:
-                    self.console.print(f"   ⚠️ [yellow]Sin resultados con esta estrategia[/yellow]")
+                    self.console.print(f"   ⚠️ [yellow]Sin resultados con estrategia {i}[/yellow]")
                     
             except Exception as e:
                 self.console.print(f"   ❌ [red]Error en estrategia {i}: {str(e)}[/red]")
                 continue
         
-        # Remover duplicados manteniendo el orden
+        # Remover duplicados manteniendo el orden (por si acaso)
+        if all_issues:
+            unique_issues = {issue.key: issue for issue in all_issues}
+            final_issues = list(unique_issues.values())
+            
+            duplicates_removed = len(all_issues) - len(final_issues)
+            if duplicates_removed > 0:
+                self.console.print(f"   🔄 [yellow]Duplicados eliminados: {duplicates_removed}[/yellow]")
+        else:
+            final_issues = []
+        
+        # Resumen final
+        if final_issues:
+            self.console.print(f"📊 [bold blue]TOTAL ENCONTRADO: {len(final_issues)} issues únicos[/bold blue]")
+            if successful_strategy:
+                self.console.print(f"   🎯 [dim]Usando estrategia {successful_strategy}[/dim]")
+        else:
+            self.console.print("❌ [red]No se encontraron issues en ninguna estrategia[/red]")
+        
+        return final_issues
         unique_issues = {issue.key: issue for issue in all_issues}
         final_issues = list(unique_issues.values())
         
@@ -221,18 +305,19 @@ class JiraDataExtractor:
             'labels': ', '.join(labels) if labels else 'Sin Labels'
         }
     
-    def process_project_data(self, project_key: str) -> List[Dict[str, Any]]:
+    def process_project_data(self, project_key: str, max_results: int = None) -> List[Dict[str, Any]]:
         """
         Procesa todos los datos de un proyecto
         
         Args:
             project_key: Clave del proyecto
+            max_results: Límite máximo de issues (None = todos)
             
         Returns:
             Lista de datos procesados
         """
-        # Buscar issues
-        issues = self.search_project_issues(project_key)
+        # Buscar issues con límite opcional
+        issues = self.search_project_issues(project_key, max_results)
         
         if not issues:
             self.console.print("❌ [red]No se encontraron issues para procesar[/red]")
@@ -368,20 +453,24 @@ class JiraDataExtractor:
         
         return success
     
-    def run(self, project_key: str, export_format: str = 'both') -> bool:
+    def run(self, project_key: str, export_format: str = 'both', max_results: int = None) -> bool:
         """
         Ejecuta el proceso completo de extracción
         
         Args:
             project_key: Clave del proyecto
             export_format: Formato de exportación
+            max_results: Límite máximo de issues (None = extraer todos)
             
         Returns:
             True si el proceso fue exitoso
         """
+        extraction_mode = "COMPLETA" if max_results is None else f"LIMITADA ({max_results})"
+        
         self.console.print(Panel.fit(
             f"🎯 [bold]EXTRACCIÓN DE DATOS JIRA[/bold]\n"
-            f"Proyecto: {project_key}",
+            f"Proyecto: {project_key}\n"
+            f"Modo: {extraction_mode}",
             border_style="blue"
         ))
         
@@ -389,8 +478,8 @@ class JiraDataExtractor:
         if not self.connect_to_jira():
             return False
         
-        # Procesar datos del proyecto
-        data = self.process_project_data(project_key)
+        # Procesar datos del proyecto con límite opcional
+        data = self.process_project_data(project_key, max_results)
         
         if not data:
             self.console.print("⚠️ [yellow]No se encontraron datos para extraer[/yellow]")
@@ -442,7 +531,7 @@ Ejemplos de uso:
     
     # Ejecutar extractor
     extractor = JiraDataExtractor()
-    success = extractor.run(args.project, args.format)
+    success = extractor.run(args.project, args.format, args.limit)
     
     sys.exit(0 if success else 1)
 

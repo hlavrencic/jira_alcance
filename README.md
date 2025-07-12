@@ -64,35 +64,71 @@ python jira_extractor.py --project CMZ100
 
 ## 🎯 Uso del Sistema
 
-### **Extracción Básica**
+### **Extracción Completa (Sin Límites)**
 ```bash
-# Extraer proyecto completo (Excel + CSV)
+# Extraer TODOS los issues del proyecto (recomendado)
 python jira_extractor.py --project CMZ100
 
-# Solo Excel
-python jira_extractor.py --project ABC123 --format excel
-
-# Solo CSV
-python jira_extractor.py --project XYZ789 --format csv
+# Equivalente explícito
+python jira_extractor.py --project CMZ100 --format both
 ```
 
-### **Ejemplo de Salida**
+### **Extracción con Límites (Opcional)**
+```bash
+# Limitar a un número específico de issues
+python jira_extractor.py --project CMZ100 --limit 500
+
+# Combinar límite con formato específico
+python jira_extractor.py --project ABC123 --limit 1000 --format excel
+```
+
+### **Opciones de Formato**
+```bash
+# Solo Excel
+python jira_extractor.py --project CMZ100 --format excel
+
+# Solo CSV
+python jira_extractor.py --project CMZ100 --format csv
+
+# Ambos formatos (default)
+python jira_extractor.py --project CMZ100 --format both
+```
+
+### **🌐 Sistema de Paginación Inteligente**
+
+El extractor utiliza **paginación automática** para obtener todos los issues:
+
+- ✅ **Sin límites artificiales**: Extrae todos los issues disponibles
+- ✅ **Paginación eficiente**: 100 issues por página (óptimo para Jira API)
+- ✅ **Múltiples estrategias**: Issues activos → recientes → todos
+- ✅ **Rate limiting**: Pausas automáticas entre páginas
+- ✅ **Límite de seguridad**: Protección contra bucles infinitos (10,000 issues)
+
+### **Ejemplo de Salida Completa**
 ```
 🎯 EXTRACCIÓN DE DATOS JIRA
 Proyecto: CMZ100
+Modo: COMPLETA
 
 🔄 Conectando a Jira...
 ✅ Conectado como: usuario@empresa.com
 🔍 Buscando issues del proyecto CMZ100...
-✅ Encontrados 100 issues
-⚙️ Procesando datos de timetracking...
-📊 RESUMEN DE DATOS EXTRAÍDOS
+   🌐 Modo: Extracción completa (todos los issues)
+   📋 Estrategia 1: Issues activos
+   📄 Página: desde 0, tamaño 100
+   📊 +100 issues (total: 100)
+   📄 Página: desde 100, tamaño 100
+   📊 +100 issues (total: 200)
+   ... [continúa hasta obtener todos]
+   🏁 Última página: 45 < 100
+   ✅ Estrategia 1 exitosa: 1,245 issues totales
+📊 TOTAL ENCONTRADO: 1,245 issues únicos
 
 📈 Métricas Generales
-├── Total Issues: 100
-├── Tiempo Registrado: 291.2 horas
-├── Tiempo Estimado: 183.0 horas
-└── Progreso: 159.2%
+├── Total Issues: 1,245
+├── Tiempo Registrado: 2,890.5 horas
+├── Tiempo Estimado: 1,830.0 horas
+└── Progreso: 158.0%
 
 ✅ EXTRACCIÓN COMPLETADA
 ```
