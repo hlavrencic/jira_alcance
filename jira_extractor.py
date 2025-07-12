@@ -40,6 +40,7 @@ class JiraDataExtractor:
         """Inicializa el extractor"""
         self.console = Console()
         self.jira: Optional[JIRA] = None
+        self._boards_cache = {}  # Cache para boards por proyecto
         
     def connect_to_jira(self) -> bool:
         """
@@ -592,7 +593,7 @@ class JiraDataExtractor:
 
     def get_project_boards(self, project_key: str) -> List[Dict[str, Any]]:
         """
-        Obtiene los boards asociados al proyecto
+        Obtiene los boards asociados al proyecto con cache para optimizar
         
         Args:
             project_key: Clave del proyecto
@@ -600,6 +601,11 @@ class JiraDataExtractor:
         Returns:
             Lista de boards del proyecto
         """
+        # Verificar cache primero
+        if project_key in self._boards_cache:
+            self.console.print(f"💾 [green]Usando boards en cache para {project_key}[/green]")
+            return self._boards_cache[project_key]
+        
         # Usar directamente el método alternativo que sabemos que funciona
         try:
             # Usar la biblioteca requests directamente para la API de Agile con paginación               
@@ -654,6 +660,10 @@ class JiraDataExtractor:
                         self.console.print(f"   ✅ [green]Board encontrado: {board['name']} (ID: {board['id']})[/green]")
             
             self.console.print(f"📋 [cyan]Encontrados {len(all_boards)} boards totales, {len(project_boards)} del proyecto {project_key}[/cyan]")
+            
+            # Guardar en cache
+            self._boards_cache[project_key] = project_boards
+            
             return project_boards
                 
         except Exception as e:
@@ -671,6 +681,13 @@ class JiraDataExtractor:
             Lista de sprints activos ordenados por fecha de creación (más recientes primero)
         """
         try:
+            # Calcular fecha límite (2 meses atrás)
+            from datetime import datetime, timedelta
+            cutoff_date = datetime.now() - timedelta(days=60)  # 2 meses = ~60 días
+            cutoff_date_str = cutoff_date.strftime('%Y-%m-%d')
+            
+            self.console.print(f"⏰ [cyan]Optimización: buscando sprints creados después del {cutoff_date_str}[/cyan]")
+            
             # Obtener todos los boards del proyecto
             boards = self.get_project_boards(project_key)
             
@@ -697,6 +714,7 @@ class JiraDataExtractor:
                     start_at = 0
                     max_results = 50
                     board_active_sprints = 0
+                    board_old_sprints_skipped = 0
                     
                     # Buscar primero todos los sprints del board y luego filtrar por activos
                     while True:
@@ -720,12 +738,35 @@ class JiraDataExtractor:
                         
                         self.console.print(f"   📄 [dim]Página {start_at//max_results + 1}: {len(sprints)} sprints encontrados[/dim]")
                         
-                        # Procesar todos los sprints y filtrar por activos
+                        # Procesar sprints con terminación temprana para optimizar
+                        found_old_sprint = False
+                        
                         for sprint in sprints:
                             sprint_state = sprint.get('state', '').lower()
-                            self.console.print(f"   🔍 [dim]Sprint: {sprint['name'][:20]} - Estado: {sprint_state}[/dim]")
+                            sprint_created = sprint.get('createdDate', '')
+                            sprint_name = sprint.get('name', 'Sin nombre')
                             
-                            if sprint_state == 'active':
+                            # Verificar si el sprint fue creado dentro del rango de 2 meses
+                            is_recent = True  # Por defecto asumir que es reciente
+                            if sprint_created:
+                                try:
+                                    # Parsear fecha de creación del sprint
+                                    created_date = datetime.fromisoformat(sprint_created.replace('Z', '+00:00')).replace(tzinfo=None)
+                                    is_recent = created_date >= cutoff_date
+                                    
+                                    # Si encontramos un sprint muy antiguo, marcamos para posible terminación
+                                    if not is_recent:
+                                        found_old_sprint = True
+                                        
+                                except Exception as date_error:
+                                    # Si no se puede parsear la fecha, incluir el sprint por seguridad
+                                    self.console.print(f"   ⚠️ [dim]No se pudo parsear fecha de {sprint_name}: {date_error}[/dim]")
+                                    is_recent = True
+                            
+                            self.console.print(f"   🔍 [dim]Sprint: {sprint_name[:20]} - Estado: {sprint_state} - Reciente: {is_recent}[/dim]")
+                            
+                            # Solo incluir sprints activos Y recientes (últimos 2 meses)
+                            if sprint_state == 'active' and is_recent:
                                 sprint_data = {
                                     'id': sprint['id'],
                                     'name': sprint['name'],
@@ -739,6 +780,23 @@ class JiraDataExtractor:
                                 all_active_sprints.append(sprint_data)
                                 board_active_sprints += 1
                                 self.console.print(f"   ✅ [green]Sprint activo encontrado: {sprint['name']}[/green]")
+                            elif sprint_state == 'active' and not is_recent:
+                                # Sprint activo pero demasiado antiguo (más de 2 meses)
+                                board_old_sprints_skipped += 1
+                                self.console.print(f"   ⏰ [yellow]Sprint activo omitido (>2 meses): {sprint_name}[/yellow]")
+                        
+                        # Optimización: si todos los sprints de esta página son antiguos, 
+                        # es probable que las siguientes páginas también lo sean
+                        if found_old_sprint and board_active_sprints == 0 and len(sprints) == max_results:
+                            # Solo terminamos temprano si no hemos encontrado NINGÚN sprint activo reciente
+                            # y todos los sprints de esta página son antiguos
+                            old_sprints_in_page = sum(1 for s in sprints 
+                                                     if s.get('createdDate') and 
+                                                     datetime.fromisoformat(s.get('createdDate', '').replace('Z', '+00:00')).replace(tzinfo=None) < cutoff_date)
+                            
+                            if old_sprints_in_page == len(sprints):
+                                self.console.print(f"   ⚡ [yellow]Terminación temprana: todos los sprints son >2 meses[/yellow]")
+                                break
                         
                         # Si obtuvimos menos sprints que el máximo, ya no hay más páginas
                         if len(sprints) < max_results:
@@ -746,7 +804,9 @@ class JiraDataExtractor:
                             
                         start_at += max_results
                     
-                    self.console.print(f"   📊 [blue]Board {board['name']}: {board_active_sprints} sprints activos[/blue]")
+                    self.console.print(f"   📊 [blue]Board {board['name']}: {board_active_sprints} sprints activos recientes[/blue]")
+                    if board_old_sprints_skipped > 0:
+                        self.console.print(f"   ⏰ [yellow]Board {board['name']}: {board_old_sprints_skipped} sprints activos omitidos (>2 meses)[/yellow]")
                 
                 except Exception as e:
                     self.console.print(f"   ❌ [red]Error obteniendo sprints del board {board['name']}: {str(e)}[/red]")
