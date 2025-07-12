@@ -949,17 +949,88 @@ class JiraDataExtractor:
                     self.console.print("❌ [red]No se ingresaron IDs válidos[/red]")
                     continue
                 
-                # Mostrar confirmación
+                # Mostrar confirmación con tabla de datos
                 self.console.print(f"\n✅ [green]IDs de sprints ingresados: {len(sprint_ids)}[/green]")
-                for sprint_id in sprint_ids:
-                    # Buscar información del sprint si está en la lista de activos
-                    sprint_info = next((s for s in active_sprints if s['id'] == sprint_id), None)
-                    if sprint_info:
-                        self.console.print(f"  🟢 {sprint_info['name']} (ID: {sprint_id}) [{sprint_info['board_name']}]")
-                    else:
-                        self.console.print(f"  ⚪ Sprint ID: {sprint_id} (no está en sprints activos)")
+                self.console.print("🔍 [cyan]Obteniendo información detallada de los sprints...[/cyan]")
                 
-                if Confirm.ask("\n¿Confirmas estos IDs de sprints?", default=True):
+                # Obtener información completa de cada sprint desde la API
+                sprint_details = self.get_sprint_details(sprint_ids)
+                
+                # Crear tabla para mostrar la información de los sprints seleccionados
+                confirmation_table = Table(title="🔍 Sprints Seleccionados para Confirmación", show_header=True)
+                confirmation_table.add_column("ID", style="blue", width=8)
+                confirmation_table.add_column("Nombre", style="green", width=30)
+                confirmation_table.add_column("Estado", style="yellow", width=10)
+                confirmation_table.add_column("Fecha Inicio", style="magenta", width=12)
+                confirmation_table.add_column("Fecha Fin", style="magenta", width=12)
+                confirmation_table.add_column("Objetivo", style="cyan", width=25)
+                confirmation_table.add_column("Existe", style="bright_green", width=8)
+                
+                sprints_found = 0
+                sprints_not_found = 0
+                
+                for sprint_id in sprint_ids:
+                    sprint_info = sprint_details.get(sprint_id)
+                    
+                    if sprint_info and sprint_info.get('exists', False):
+                        # Sprint encontrado en la API
+                        sprints_found += 1
+                        
+                        # Formatear fechas
+                        start_date = sprint_info.get('startDate', 'N/A')
+                        end_date = sprint_info.get('endDate', 'N/A')
+                        
+                        if start_date and start_date != 'N/A':
+                            try:
+                                start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+                            except:
+                                start_date = 'N/A'
+                        
+                        if end_date and end_date != 'N/A':
+                            try:
+                                end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+                            except:
+                                end_date = 'N/A'
+                        
+                        # Formatear objetivo
+                        goal = sprint_info.get('goal', 'Sin objetivo')
+                        if goal and len(goal) > 25:
+                            goal = goal[:22] + "..."
+                        
+                        confirmation_table.add_row(
+                            str(sprint_id),
+                            sprint_info.get('name', 'Sin nombre')[:30],
+                            sprint_info.get('state', 'N/A'),
+                            start_date,
+                            end_date,
+                            goal,
+                            "✅ Sí"
+                        )
+                    else:
+                        # Sprint no encontrado
+                        sprints_not_found += 1
+                        error_msg = sprint_info.get('error', 'No encontrado') if sprint_info else 'No encontrado'
+                        confirmation_table.add_row(
+                            str(sprint_id),
+                            f"❌ {error_msg}",
+                            "N/A",
+                            "N/A",
+                            "N/A",
+                            "N/A",
+                            "❌ No"
+                        )
+                
+                # Mostrar la tabla
+                self.console.print(confirmation_table)
+                
+                # Mostrar resumen
+                if sprints_not_found > 0:
+                    self.console.print(f"\n⚠️ [yellow]Advertencia: {sprints_not_found} sprint(s) no se pudieron encontrar[/yellow]")
+                    self.console.print("   [dim]Estos sprints pueden no existir o no tener permisos para acceder[/dim]")
+                
+                self.console.print(f"\n📊 [cyan]Resumen: {sprints_found} sprint(s) encontrados, {sprints_not_found} no encontrados[/cyan]")
+                
+                if Confirm.ask("\n¿Confirmas procesar estos sprints?", default=True):
                     return sprint_ids
                 
             except ValueError:
@@ -1058,6 +1129,80 @@ class JiraDataExtractor:
             self.console.print("❌ [red]No se encontraron issues en los sprints especificados[/red]")
         
         return all_issues
+    
+    def get_sprint_details(self, sprint_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+        """
+        Obtiene los detalles de sprints específicos desde la API de Jira
+        
+        Args:
+            sprint_ids: Lista de IDs de sprints a consultar
+            
+        Returns:
+            Diccionario con información de cada sprint {sprint_id: sprint_data}
+        """
+        sprint_details = {}
+        
+        try:
+            server = os.getenv('JIRA_SERVER')
+            email = os.getenv('JIRA_EMAIL')
+            token = os.getenv('JIRA_API_TOKEN')
+            auth = (email, token)
+            
+            for sprint_id in sprint_ids:
+                try:
+                    self.console.print(f"   🔍 [dim]Consultando sprint ID: {sprint_id}...[/dim]")
+                    
+                    # Consultar sprint específico usando la API de Agile
+                    url = f"{server}/rest/agile/1.0/sprint/{sprint_id}"
+                    response = requests.get(url, auth=auth)
+                    
+                    if response.status_code == 200:
+                        sprint_data = response.json()
+                        sprint_details[sprint_id] = {
+                            'exists': True,
+                            'id': sprint_data.get('id'),
+                            'name': sprint_data.get('name', 'Sin nombre'),
+                            'state': sprint_data.get('state', 'N/A'),
+                            'startDate': sprint_data.get('startDate'),
+                            'endDate': sprint_data.get('endDate'),
+                            'goal': sprint_data.get('goal', 'Sin objetivo'),
+                            'originBoardId': sprint_data.get('originBoardId'),
+                            'createdDate': sprint_data.get('createdDate')
+                        }
+                        self.console.print(f"   ✅ [green]Sprint {sprint_id}: {sprint_data.get('name', 'Sin nombre')} - {sprint_data.get('state', 'N/A')}[/green]")
+                    
+                    elif response.status_code == 404:
+                        sprint_details[sprint_id] = {
+                            'exists': False,
+                            'error': 'Sprint no existe'
+                        }
+                        self.console.print(f"   ❌ [red]Sprint {sprint_id}: No existe[/red]")
+                    
+                    elif response.status_code == 403:
+                        sprint_details[sprint_id] = {
+                            'exists': False,
+                            'error': 'Sin permisos'
+                        }
+                        self.console.print(f"   ❌ [red]Sprint {sprint_id}: Sin permisos de acceso[/red]")
+                    
+                    else:
+                        sprint_details[sprint_id] = {
+                            'exists': False,
+                            'error': f'HTTP {response.status_code}'
+                        }
+                        self.console.print(f"   ❌ [red]Sprint {sprint_id}: Error HTTP {response.status_code}[/red]")
+                
+                except Exception as e:
+                    sprint_details[sprint_id] = {
+                        'exists': False,
+                        'error': f'Error: {str(e)[:30]}'
+                    }
+                    self.console.print(f"   ❌ [red]Sprint {sprint_id}: Error - {str(e)[:50]}[/red]")
+        
+        except Exception as e:
+            self.console.print(f"❌ [red]Error general obteniendo detalles de sprints: {str(e)}[/red]")
+        
+        return sprint_details
 
 
 def main():
