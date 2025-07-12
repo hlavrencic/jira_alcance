@@ -1,0 +1,18 @@
+# 🎯 Jira Data Extractor - Dependencias v2.0
+# ================================================
+
+# Core Jira API
+jira>=3.8.0
+
+# Data Processing & Export
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# User Interface & Progress
+rich>=13.0.0
+
+# Configuration Management
+python-dotenv>=1.0.0
+
+# HTTP Requests (dependency de jira)
+requests>=2.31.0
