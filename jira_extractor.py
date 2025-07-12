@@ -288,9 +288,18 @@ class JiraDataExtractor:
         # Obtener información de sprint
         sprint_info = self._extract_sprint_info(issue)
         
+        # Determinar si es subtarea
+        is_subtask = getattr(issue.fields.issuetype, 'subtask', False)
+        parent_key = issue.fields.parent.key if hasattr(issue.fields, 'parent') and issue.fields.parent else None
+        
+        # Lógica para la columna Parent
+        # Para subtareas: usar parent_key, para el resto: usar key del issue
+        parent_value = parent_key if is_subtask else issue.key
+        
         return {
-            'is_subtask': getattr(issue.fields.issuetype, 'subtask', False),
-            'parent_key': issue.fields.parent.key if hasattr(issue.fields, 'parent') and issue.fields.parent else None,
+            'parent': parent_value,
+            'is_subtask': is_subtask,
+            'parent_key': parent_key,
             'sprint_name': sprint_info['name'],
             'sprint_id': sprint_info['id'],
             'sprint_state': sprint_info['state'],
@@ -494,6 +503,11 @@ class JiraDataExtractor:
         
         # Crear DataFrame
         df = pd.DataFrame(data)
+        
+        # Reordenar columnas: colocar 'parent' al principio
+        if 'parent' in df.columns:
+            columns = ['parent'] + [col for col in df.columns if col != 'parent']
+            df = df[columns]
         
         success = True
         
