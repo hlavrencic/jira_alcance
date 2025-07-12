@@ -297,7 +297,7 @@ class JiraDataExtractor:
         parent_value = parent_key if is_subtask else issue.key
         
         return {
-            'parent': parent_value,
+            'feature': parent_value,
             'is_subtask': is_subtask,
             'parent_key': parent_key,
             'sprint_name': sprint_info['name'],
@@ -504,9 +504,9 @@ class JiraDataExtractor:
         # Crear DataFrame
         df = pd.DataFrame(data)
         
-        # Reordenar columnas: colocar 'parent' al principio
-        if 'parent' in df.columns:
-            columns = ['parent'] + [col for col in df.columns if col != 'parent']
+        # Reordenar columnas: colocar 'feature' al principio
+        if 'feature' in df.columns:
+            columns = ['feature'] + [col for col in df.columns if col != 'feature']
             df = df[columns]
         
         success = True
