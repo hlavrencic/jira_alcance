@@ -251,9 +251,9 @@ class JiraDataExtractor:
     def _extract_timetracking(self, issue: Any) -> Dict[str, Any]:
         """Extrae datos de timetracking del issue"""
         time_data = {
-            'time_spent': '0h',
-            'original_estimate': '0h', 
-            'remaining_estimate': '0h',
+            'time_spent': 0.0,
+            'original_estimate': 0.0, 
+            'remaining_estimate': 0.0,
             'time_spent_seconds': 0,
             'original_estimate_seconds': 0,
             'remaining_estimate_seconds': 0
@@ -266,19 +266,19 @@ class JiraDataExtractor:
             if hasattr(tt, 'timeSpentSeconds') and tt.timeSpentSeconds:
                 seconds = tt.timeSpentSeconds
                 time_data['time_spent_seconds'] = seconds
-                time_data['time_spent'] = f"{seconds / 3600:.2f}h"
+                time_data['time_spent'] = round(seconds / 3600, 1)
             
             # Estimación original
             if hasattr(tt, 'originalEstimateSeconds') and tt.originalEstimateSeconds:
                 seconds = tt.originalEstimateSeconds
                 time_data['original_estimate_seconds'] = seconds
-                time_data['original_estimate'] = f"{seconds / 3600:.2f}h"
+                time_data['original_estimate'] = round(seconds / 3600, 1)
             
             # Tiempo restante
             if hasattr(tt, 'remainingEstimateSeconds') and tt.remainingEstimateSeconds:
                 seconds = tt.remainingEstimateSeconds
                 time_data['remaining_estimate_seconds'] = seconds
-                time_data['remaining_estimate'] = f"{seconds / 3600:.2f}h"
+                time_data['remaining_estimate'] = round(seconds / 3600, 1)
         
         return time_data
     
