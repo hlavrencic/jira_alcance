@@ -13,6 +13,7 @@ Versión: 2.0 (Refactorizada)
 import argparse
 import os
 import sys
+import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -82,8 +83,6 @@ class JiraDataExtractor:
         Returns:
             Lista completa de issues encontrados
         """
-        import time  # Para delays entre páginas
-        
         self.console.print(f"🔍 [cyan]Buscando issues del proyecto {project_key}...[/cyan]")
         
         # Determinar si extraer todos o usar límite
@@ -200,12 +199,6 @@ class JiraDataExtractor:
                 self.console.print(f"   🎯 [dim]Usando estrategia {successful_strategy}[/dim]")
         else:
             self.console.print("❌ [red]No se encontraron issues en ninguna estrategia[/red]")
-        
-        return final_issues
-        unique_issues = {issue.key: issue for issue in all_issues}
-        final_issues = list(unique_issues.values())
-        
-        self.console.print(f"📊 [bold]Total issues únicos: {len(final_issues)}[/bold]")
         
         return final_issues
     
@@ -525,6 +518,12 @@ Ejemplos de uso:
         choices=['excel', 'csv', 'both'],
         default='both',
         help='Formato de exportación (default: both)'
+    )
+    
+    parser.add_argument(
+        '--limit', '-l',
+        type=int,
+        help='Límite máximo de issues a procesar (opcional)'
     )
     
     args = parser.parse_args()
