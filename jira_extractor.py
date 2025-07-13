@@ -683,7 +683,9 @@ class JiraDataExtractor:
         """
         mode_description = "COMPLETA" if max_results is None else f"LIMITADA ({max_results})"
         if use_sprints:
-            mode_description += " - SPRINTS ESPECÍFICOS"
+            mode_description += " - SELECCIÓN DE SPRINTS"
+        else:
+            mode_description += " - BÚSQUEDA TRADICIONAL"
         
         self.console.print(Panel.fit(
             f"🎯 [bold]EXTRACCIÓN DE DATOS JIRA[/bold]\n"
@@ -1494,8 +1496,8 @@ def main():
 Ejemplos de uso:
   python jira_extractor.py --project CMZ100
   python jira_extractor.py --project CMZ100 --format excel
-  python jira_extractor.py --project CMZ100 --sprints
-  python jira_extractor.py --project ABC123 --sprints --limit 500
+  python jira_extractor.py --project CMZ100 --limit 500
+  python jira_extractor.py --project ABC123 --no-sprints (modo legacy)
         """
     )
     
@@ -1519,16 +1521,19 @@ Ejemplos de uso:
     )
     
     parser.add_argument(
-        '--sprints', '-s',
+        '--no-sprints',
         action='store_true',
-        help='Permite seleccionar sprints específicos para extraer'
+        help='Usar búsqueda tradicional en lugar de selección de sprints (modo legacy)'
     )
     
     args = parser.parse_args()
     
+    # Por defecto usar sprints, excepto si se especifica --no-sprints
+    use_sprints = not args.no_sprints
+    
     # Ejecutar extractor
     extractor = JiraDataExtractor()
-    success = extractor.run(args.project, args.format, args.limit, args.sprints)
+    success = extractor.run(args.project, args.format, args.limit, use_sprints)
     
     sys.exit(0 if success else 1)
 
