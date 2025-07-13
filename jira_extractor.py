@@ -530,8 +530,12 @@ class JiraDataExtractor:
         # Columnas de tiempo
         time_columns = ['time_spent', 'original_estimate', 'remaining_estimate']
         
-        # Columnas de subtareas
-        subtask_columns = ['analisis_remaining', 'testing_remaining', 'desarrollo_remaining']
+        # Columnas de subtareas (organizadas por tipo: análisis, testing, desarrollo)
+        subtask_columns = [
+            'analisis_time_spent', 'analisis_original_estimate', 'analisis_remaining',
+            'testing_time_spent', 'testing_original_estimate', 'testing_remaining', 
+            'desarrollo_time_spent', 'desarrollo_original_estimate', 'desarrollo_remaining'
+        ]
         
         # Resto de columnas
         other_columns = ['is_subtask', 'parent_key', 'sprint_name', 'sprint_id', 
@@ -1338,9 +1342,15 @@ class JiraDataExtractor:
             issue_key = issue.get('key')
             feature_key = issue.get('feature')
             
-            # Inicializar las nuevas columnas
+            # Inicializar las nuevas columnas (9 columnas en total)
+            issue['analisis_time_spent'] = '0,0'
+            issue['analisis_original_estimate'] = '0,0'
             issue['analisis_remaining'] = '0,0'
+            issue['testing_time_spent'] = '0,0'
+            issue['testing_original_estimate'] = '0,0'
             issue['testing_remaining'] = '0,0'
+            issue['desarrollo_time_spent'] = '0,0'
+            issue['desarrollo_original_estimate'] = '0,0'
             issue['desarrollo_remaining'] = '0,0'
             
             # Buscar subtareas relacionadas tanto por key como por feature
@@ -1350,30 +1360,60 @@ class JiraDataExtractor:
             if feature_key and feature_key != issue_key and feature_key in parent_to_subtasks:
                 related_subtasks.extend(parent_to_subtasks[feature_key])
             
-            # Categorizar subtareas por tipo
-            analisis_values = []
-            testing_values = []
-            desarrollo_values = []
+            # Categorizar subtareas por tipo y extraer todos los valores
+            analisis_time_spent = []
+            analisis_original_estimate = []
+            analisis_remaining = []
+            
+            testing_time_spent = []
+            testing_original_estimate = []
+            testing_remaining = []
+            
+            desarrollo_time_spent = []
+            desarrollo_original_estimate = []
+            desarrollo_remaining = []
             
             for subtask in related_subtasks:
                 summary = subtask.get('summary', '').lower()
+                time_spent = subtask.get('time_spent', '0,0')
+                original_estimate = subtask.get('original_estimate', '0,0')
                 remaining = subtask.get('remaining_estimate', '0,0')
                 
                 # Categorizar según el inicio del summary
                 if summary.startswith('analisis'):
-                    analisis_values.append(remaining)
+                    analisis_time_spent.append(time_spent)
+                    analisis_original_estimate.append(original_estimate)
+                    analisis_remaining.append(remaining)
                 elif summary.startswith('testing'):
-                    testing_values.append(remaining)
+                    testing_time_spent.append(time_spent)
+                    testing_original_estimate.append(original_estimate)
+                    testing_remaining.append(remaining)
                 elif summary.startswith('desarrollo'):
-                    desarrollo_values.append(remaining)
+                    desarrollo_time_spent.append(time_spent)
+                    desarrollo_original_estimate.append(original_estimate)
+                    desarrollo_remaining.append(remaining)
             
             # Asignar valores a las columnas (separados por ;)
-            if analisis_values:
-                issue['analisis_remaining'] = ';'.join(analisis_values)
-            if testing_values:
-                issue['testing_remaining'] = ';'.join(testing_values)
-            if desarrollo_values:
-                issue['desarrollo_remaining'] = ';'.join(desarrollo_values)
+            if analisis_time_spent:
+                issue['analisis_time_spent'] = ';'.join(analisis_time_spent)
+            if analisis_original_estimate:
+                issue['analisis_original_estimate'] = ';'.join(analisis_original_estimate)
+            if analisis_remaining:
+                issue['analisis_remaining'] = ';'.join(analisis_remaining)
+                
+            if testing_time_spent:
+                issue['testing_time_spent'] = ';'.join(testing_time_spent)
+            if testing_original_estimate:
+                issue['testing_original_estimate'] = ';'.join(testing_original_estimate)
+            if testing_remaining:
+                issue['testing_remaining'] = ';'.join(testing_remaining)
+                
+            if desarrollo_time_spent:
+                issue['desarrollo_time_spent'] = ';'.join(desarrollo_time_spent)
+            if desarrollo_original_estimate:
+                issue['desarrollo_original_estimate'] = ';'.join(desarrollo_original_estimate)
+            if desarrollo_remaining:
+                issue['desarrollo_remaining'] = ';'.join(desarrollo_remaining)
         
         return main_issues
 
