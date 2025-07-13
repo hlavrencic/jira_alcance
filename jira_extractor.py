@@ -249,13 +249,17 @@ class JiraDataExtractor:
             return {}
     
     def _extract_timetracking(self, issue: Any) -> Dict[str, Any]:
-        """Extrae datos de timetracking del issue"""
+        """Extrae datos de timetracking del issue (incluyendo agregados)"""
         time_data = {
             'time_spent': '0,0',
             'original_estimate': '0,0', 
-            'remaining_estimate': '0,0'
+            'remaining_estimate': '0,0',
+            'aggregate_time_spent': '0,0',
+            'aggregate_original_estimate': '0,0',
+            'aggregate_time_estimate': '0,0'
         }
         
+        # Timetracking regular (solo del issue)
         if hasattr(issue.fields, 'timetracking') and issue.fields.timetracking:
             tt = issue.fields.timetracking
             
@@ -276,6 +280,22 @@ class JiraDataExtractor:
                 seconds = tt.remainingEstimateSeconds
                 hours = round(seconds / 3600, 1)
                 time_data['remaining_estimate'] = str(hours).replace('.', ',')
+        
+        # Timetracking agregado (incluyendo subtareas)
+        # aggregatetimespent - Tiempo total gastado incluyendo subtareas
+        if hasattr(issue.fields, 'aggregatetimespent') and issue.fields.aggregatetimespent:
+            hours = round(issue.fields.aggregatetimespent / 3600, 1)
+            time_data['aggregate_time_spent'] = str(hours).replace('.', ',')
+        
+        # aggregatetimeoriginalestimate - Estimación original total incluyendo subtareas
+        if hasattr(issue.fields, 'aggregatetimeoriginalestimate') and issue.fields.aggregatetimeoriginalestimate:
+            hours = round(issue.fields.aggregatetimeoriginalestimate / 3600, 1)
+            time_data['aggregate_original_estimate'] = str(hours).replace('.', ',')
+        
+        # aggregatetimeestimate - Tiempo estimado total incluyendo subtareas
+        if hasattr(issue.fields, 'aggregatetimeestimate') and issue.fields.aggregatetimeestimate:
+            hours = round(issue.fields.aggregatetimeestimate / 3600, 1)
+            time_data['aggregate_time_estimate'] = str(hours).replace('.', ',')
         
         return time_data
     
@@ -536,6 +556,9 @@ class JiraDataExtractor:
         # Columnas de tiempo
         time_columns = ['time_spent', 'original_estimate', 'remaining_estimate']
         
+        # Columnas de tiempo agregado (incluyendo subtareas)
+        aggregate_time_columns = ['aggregate_time_spent', 'aggregate_original_estimate', 'aggregate_time_estimate']
+        
         # Columnas de subtareas (organizadas por tipo: análisis, testing, desarrollo)
         subtask_columns = [
             'analisis_time_spent', 'analisis_original_estimate', 'analisis_remaining',
@@ -549,7 +572,7 @@ class JiraDataExtractor:
         
         # Construir orden final
         ordered_columns = []
-        for col_group in [base_columns, main_columns, time_columns, subtask_columns, other_columns]:
+        for col_group in [base_columns, main_columns, time_columns, aggregate_time_columns, subtask_columns, other_columns]:
             for col in col_group:
                 if col in df.columns:
                     ordered_columns.append(col)
