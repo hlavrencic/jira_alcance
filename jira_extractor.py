@@ -251,9 +251,9 @@ class JiraDataExtractor:
     def _extract_timetracking(self, issue: Any) -> Dict[str, Any]:
         """Extrae datos de timetracking del issue"""
         time_data = {
-            'time_spent': 0.0,
-            'original_estimate': 0.0, 
-            'remaining_estimate': 0.0
+            'time_spent': '0,0',
+            'original_estimate': '0,0', 
+            'remaining_estimate': '0,0'
         }
         
         if hasattr(issue.fields, 'timetracking') and issue.fields.timetracking:
@@ -262,17 +262,20 @@ class JiraDataExtractor:
             # Tiempo gastado
             if hasattr(tt, 'timeSpentSeconds') and tt.timeSpentSeconds:
                 seconds = tt.timeSpentSeconds
-                time_data['time_spent'] = round(seconds / 3600, 1)
+                hours = round(seconds / 3600, 1)
+                time_data['time_spent'] = str(hours).replace('.', ',')
             
             # Estimación original
             if hasattr(tt, 'originalEstimateSeconds') and tt.originalEstimateSeconds:
                 seconds = tt.originalEstimateSeconds
-                time_data['original_estimate'] = round(seconds / 3600, 1)
+                hours = round(seconds / 3600, 1)
+                time_data['original_estimate'] = str(hours).replace('.', ',')
             
             # Tiempo restante
             if hasattr(tt, 'remainingEstimateSeconds') and tt.remainingEstimateSeconds:
                 seconds = tt.remainingEstimateSeconds
-                time_data['remaining_estimate'] = round(seconds / 3600, 1)
+                hours = round(seconds / 3600, 1)
+                time_data['remaining_estimate'] = str(hours).replace('.', ',')
         
         return time_data
     
@@ -399,14 +402,22 @@ class JiraDataExtractor:
         # Procesar datos
         self.console.print("⚙️ [cyan]Procesando datos de timetracking...[/cyan]")
         
-        processed_data = []
-        
+        # Procesar todos los issues primero
+        all_issues_data = []
         for issue in track(issues, description="Procesando issues..."):
             issue_data = self.extract_issue_data(issue)
             if issue_data:  # Solo agregar si se procesó correctamente
-                processed_data.append(issue_data)
+                all_issues_data.append(issue_data)
         
-        return processed_data
+        # Separar subtareas de issues principales
+        main_issues = [issue for issue in all_issues_data if not issue.get('is_subtask', False)]
+        subtasks = [issue for issue in all_issues_data if issue.get('is_subtask', False)]
+        
+        # Agregar datos de subtareas a los issues principales
+        self.console.print("🔗 [cyan]Procesando relaciones de subtareas...[/cyan]")
+        final_data = self._process_subtask_relationships(main_issues, subtasks)
+        
+        return final_data
     
     def display_summary(self, data: List[Dict[str, Any]]) -> None:
         """Muestra resumen de los datos procesados"""
@@ -417,8 +428,10 @@ class JiraDataExtractor:
         
         # Métricas generales
         total_issues = len(data)
-        total_time_spent = sum(item['time_spent'] for item in data)
-        total_estimated = sum(item['original_estimate'] for item in data)
+        
+        # Convertir valores con coma a float para cálculos
+        total_time_spent = sum(float(str(item['time_spent']).replace(',', '.')) for item in data)
+        total_estimated = sum(float(str(item['original_estimate']).replace(',', '.')) for item in data)
         
         # Tabla de métricas
         metrics_table = Table(title="📈 Métricas Generales", show_header=True)
@@ -426,12 +439,12 @@ class JiraDataExtractor:
         metrics_table.add_column("Valor", style="green")
         
         metrics_table.add_row("Total Issues", str(total_issues))
-        metrics_table.add_row("Tiempo Registrado", f"{total_time_spent:.1f} horas")
-        metrics_table.add_row("Tiempo Estimado", f"{total_estimated:.1f} horas")
+        metrics_table.add_row("Tiempo Registrado", f"{total_time_spent:.1f} horas".replace('.', ','))
+        metrics_table.add_row("Tiempo Estimado", f"{total_estimated:.1f} horas".replace('.', ','))
         
         if total_estimated > 0:
             progress = (total_time_spent / total_estimated) * 100
-            metrics_table.add_row("Progreso", f"{progress:.1f}%")
+            metrics_table.add_row("Progreso", f"{progress:.1f}%".replace('.', ','))
         
         self.console.print(metrics_table)
         
@@ -502,16 +515,41 @@ class JiraDataExtractor:
         # Crear DataFrame
         df = pd.DataFrame(data)
         
-        # Reordenar columnas: colocar 'epic_key' al principio, luego 'feature'
-        if 'epic_key' in df.columns and 'feature' in df.columns:
-            columns = ['epic_key', 'feature'] + [col for col in df.columns if col not in ['epic_key', 'feature']]
-            df = df[columns]
-        elif 'epic_key' in df.columns:
-            columns = ['epic_key'] + [col for col in df.columns if col != 'epic_key']
-            df = df[columns]
-        elif 'feature' in df.columns:
-            columns = ['feature'] + [col for col in df.columns if col != 'feature']
-            df = df[columns]
+        # Reordenar columnas: colocar 'epic_key', 'feature' al principio, 
+        # luego las columnas de subtareas antes de los campos de tiempo
+        base_columns = []
+        if 'epic_key' in df.columns:
+            base_columns.append('epic_key')
+        if 'feature' in df.columns:
+            base_columns.append('feature')
+        
+        # Columnas principales del issue
+        main_columns = ['key', 'summary', 'issue_type', 'status', 'priority', 
+                       'assignee', 'reporter', 'created', 'updated', 'project_key']
+        
+        # Columnas de tiempo
+        time_columns = ['time_spent', 'original_estimate', 'remaining_estimate']
+        
+        # Columnas de subtareas
+        subtask_columns = ['analisis_remaining', 'testing_remaining', 'desarrollo_remaining']
+        
+        # Resto de columnas
+        other_columns = ['is_subtask', 'parent_key', 'sprint_name', 'sprint_id', 
+                        'sprint_state', 'board_name', 'components', 'labels']
+        
+        # Construir orden final
+        ordered_columns = []
+        for col_group in [base_columns, main_columns, time_columns, subtask_columns, other_columns]:
+            for col in col_group:
+                if col in df.columns:
+                    ordered_columns.append(col)
+        
+        # Agregar cualquier columna restante que no esté en el orden especificado
+        for col in df.columns:
+            if col not in ordered_columns:
+                ordered_columns.append(col)
+        
+        df = df[ordered_columns]
         
         success = True
         
@@ -1271,6 +1309,73 @@ class JiraDataExtractor:
         except Exception as e:
             # En caso de error, devolver valor por defecto
             return 'Sin Epic'
+    
+    def _process_subtask_relationships(self, main_issues: List[Dict[str, Any]], subtasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Procesa las relaciones entre issues principales y subtareas
+        Agrega columnas de análisis, testing y desarrollo basadas en subtareas
+        
+        Args:
+            main_issues: Lista de issues principales (no subtareas)
+            subtasks: Lista de subtareas
+            
+        Returns:
+            Lista de issues principales con datos de subtareas agregados
+        """
+        # Crear un diccionario para mapear issues padre -> subtareas
+        # Usar tanto key como feature para mapear correctamente
+        parent_to_subtasks = {}
+        
+        for subtask in subtasks:
+            parent_key = subtask.get('parent_key')
+            if parent_key:
+                if parent_key not in parent_to_subtasks:
+                    parent_to_subtasks[parent_key] = []
+                parent_to_subtasks[parent_key].append(subtask)
+        
+        # Procesar cada issue principal
+        for issue in main_issues:
+            issue_key = issue.get('key')
+            feature_key = issue.get('feature')
+            
+            # Inicializar las nuevas columnas
+            issue['analisis_remaining'] = '0,0'
+            issue['testing_remaining'] = '0,0'
+            issue['desarrollo_remaining'] = '0,0'
+            
+            # Buscar subtareas relacionadas tanto por key como por feature
+            related_subtasks = []
+            if issue_key in parent_to_subtasks:
+                related_subtasks.extend(parent_to_subtasks[issue_key])
+            if feature_key and feature_key != issue_key and feature_key in parent_to_subtasks:
+                related_subtasks.extend(parent_to_subtasks[feature_key])
+            
+            # Categorizar subtareas por tipo
+            analisis_values = []
+            testing_values = []
+            desarrollo_values = []
+            
+            for subtask in related_subtasks:
+                summary = subtask.get('summary', '').lower()
+                remaining = subtask.get('remaining_estimate', '0,0')
+                
+                # Categorizar según el inicio del summary
+                if summary.startswith('analisis'):
+                    analisis_values.append(remaining)
+                elif summary.startswith('testing'):
+                    testing_values.append(remaining)
+                elif summary.startswith('desarrollo'):
+                    desarrollo_values.append(remaining)
+            
+            # Asignar valores a las columnas (separados por ;)
+            if analisis_values:
+                issue['analisis_remaining'] = ';'.join(analisis_values)
+            if testing_values:
+                issue['testing_remaining'] = ';'.join(testing_values)
+            if desarrollo_values:
+                issue['desarrollo_remaining'] = ';'.join(desarrollo_values)
+        
+        return main_issues
 
 
 def main():
