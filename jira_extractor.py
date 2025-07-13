@@ -351,13 +351,19 @@ class JiraDataExtractor:
         return sprint_info
     
     def _extract_metadata(self, issue: Any) -> Dict[str, Any]:
-        """Extrae metadatos (componentes, labels, etc.)"""
+        """Extrae metadatos (componentes, labels, fix versions, etc.)"""
         components = [comp.name for comp in issue.fields.components] if issue.fields.components else []
         labels = issue.fields.labels if issue.fields.labels else []
         
+        # Fix Versions - versiones donde se planea resolver el issue
+        fix_versions = []
+        if hasattr(issue.fields, 'fixVersions') and issue.fields.fixVersions:
+            fix_versions = [version.name for version in issue.fields.fixVersions]
+        
         return {
             'components': ', '.join(components) if components else 'Sin Componentes',
-            'labels': ', '.join(labels) if labels else 'Sin Labels'
+            'labels': ', '.join(labels) if labels else 'Sin Labels',
+            'fixversion': '; '.join(fix_versions) if fix_versions else 'Sin Fix Version'
         }
     
     def process_project_data(self, project_key: str, max_results: int = None, use_sprints: bool = False) -> List[Dict[str, Any]]:
@@ -539,7 +545,7 @@ class JiraDataExtractor:
         
         # Resto de columnas
         other_columns = ['is_subtask', 'parent_key', 'sprint_name', 'sprint_id', 
-                        'sprint_state', 'board_name', 'components', 'labels']
+                        'sprint_state', 'board_name', 'components', 'labels', 'fixversion']
         
         # Construir orden final
         ordered_columns = []
