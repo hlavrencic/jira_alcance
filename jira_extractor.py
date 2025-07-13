@@ -371,7 +371,7 @@ class JiraDataExtractor:
         return sprint_info
     
     def _extract_metadata(self, issue: Any) -> Dict[str, Any]:
-        """Extrae metadatos (componentes, labels, fix versions, etc.)"""
+        """Extrae metadatos (componentes, labels, fix versions, campos genéricos, etc.)"""
         components = [comp.name for comp in issue.fields.components] if issue.fields.components else []
         labels = issue.fields.labels if issue.fields.labels else []
         
@@ -380,10 +380,47 @@ class JiraDataExtractor:
         if hasattr(issue.fields, 'fixVersions') and issue.fields.fixVersions:
             fix_versions = [version.name for version in issue.fields.fixVersions]
         
+        # Campos Genéricos
+        # Genérico 1 - customfield_14399
+        generico1 = 'Sin Datos'
+        if hasattr(issue.fields, 'customfield_14399') and issue.fields.customfield_14399:
+            field_value = issue.fields.customfield_14399
+            if hasattr(field_value, 'name'):
+                generico1 = field_value.name
+            elif hasattr(field_value, 'value'):
+                generico1 = str(field_value.value)
+            else:
+                generico1 = str(field_value)
+        
+        # Genérico 2 - customfield_14400 (Facturable)
+        generico2 = 'Sin Datos'
+        if hasattr(issue.fields, 'customfield_14400') and issue.fields.customfield_14400:
+            field_value = issue.fields.customfield_14400
+            if hasattr(field_value, 'name'):
+                generico2 = field_value.name
+            elif hasattr(field_value, 'value'):
+                generico2 = str(field_value.value)
+            else:
+                generico2 = str(field_value)
+        
+        # Genérico 3 - customfield_14401 (Estimado)
+        generico3 = 'Sin Datos'
+        if hasattr(issue.fields, 'customfield_14401') and issue.fields.customfield_14401:
+            field_value = issue.fields.customfield_14401
+            if hasattr(field_value, 'name'):
+                generico3 = field_value.name
+            elif hasattr(field_value, 'value'):
+                generico3 = str(field_value.value)
+            else:
+                generico3 = str(field_value)
+        
         return {
             'components': ', '.join(components) if components else 'Sin Componentes',
             'labels': ', '.join(labels) if labels else 'Sin Labels',
-            'fixversion': '; '.join(fix_versions) if fix_versions else 'Sin Fix Version'
+            'fixversion': '; '.join(fix_versions) if fix_versions else 'Sin Fix Version',
+            'generico1': generico1,
+            'generico2': generico2,
+            'generico3': generico3
         }
     
     def process_project_data(self, project_key: str, max_results: int = None, use_sprints: bool = False) -> List[Dict[str, Any]]:
@@ -568,7 +605,8 @@ class JiraDataExtractor:
         
         # Resto de columnas
         other_columns = ['is_subtask', 'parent_key', 'sprint_name', 'sprint_id', 
-                        'sprint_state', 'board_name', 'components', 'labels', 'fixversion']
+                        'sprint_state', 'board_name', 'components', 'labels', 'fixversion',
+                        'generico1', 'generico2', 'generico3']
         
         # Construir orden final
         ordered_columns = []
