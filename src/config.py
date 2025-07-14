@@ -42,7 +42,7 @@ CUSTOM_FIELDS = {
 
 # Mapeo de tipos de subtareas
 SUBTASK_MAPPING = {
-    'análisis': ['análisis', 'analysis', 'diseño', 'design'],
+    'analisis': ['analisis', 'análisis', 'analysis', 'diseño', 'design'],
     'testing': ['testing', 'test', 'qa', 'prueba', 'pruebas'],
     'desarrollo': ['desarrollo', 'dev', 'development', 'implementación', 'implementation']
 }
