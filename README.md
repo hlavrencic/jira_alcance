@@ -69,9 +69,10 @@ Herramienta profesional refactorizada para extraer datos de timetracking de proy
 
 ## 🚀 Uso del Sistema
 
-### Opción 1: Script Modular (✨ Recomendado)
+### Opción 1: Script Modular (✨ Recomendado - Con Sprints Cerrados)
 ```bash
 # Extracción con selección de sprints (modo por defecto)
+# ✨ NUEVO: Muestra sprints activos + últimos 2 cerrados por tablero
 python main.py --project CMZ100
 
 # Búsqueda tradicional sin sprints
@@ -84,12 +85,23 @@ python main.py --project CMZ100 --format excel --limit 1000
 python main.py --project CMZ100 --format csv
 ```
 
-### Opción 2: Script Original (🔄 Compatibilidad)
+### Opción 2: Script Original (🔄 Compatibilidad - Solo Sprints Activos)
 ```bash
 # El script original sigue funcionando exactamente igual
+# 📝 NOTA: Solo muestra sprints activos (comportamiento original)
 python jira_extractor.py --project CMZ100
 python jira_extractor.py --project CMZ100 --no-sprints --limit 500
 ```
+
+### 🆚 Diferencias Clave Entre Versiones
+
+| Característica | `main.py` (v2.0 Modular) | `jira_extractor.py` (v1.x Original) |
+|---|---|---|
+| **Sprints Mostrados** | ✅ Activos + 2 cerrados recientes por tablero | ⚠️ Solo sprints activos |
+| **Tabla de Selección** | ✅ Indica estado (🟢 ACTIVO / 🔴 CERRADO) | ⚠️ Solo activos sin indicador |
+| **Selección Manual** | ✅ Permite seleccionar sprints cerrados | ⚠️ Solo permite activos |
+| **Arquitectura** | ✅ Modular y extensible | ⚠️ Monolítica |
+| **Compatibilidad** | ✅ Mismos parámetros CLI | ✅ Completamente compatible |
 
 ## ⚙️ Configuración
 
@@ -278,6 +290,15 @@ extractor.add_exporter(JSONExporter())
 3. Usar `python main.py` en lugar de llamadas directas
 
 ## 📝 Changelog
+
+### v2.0.1 (Sprints Cerrados) 🎉
+- ✨ **Sprints Cerrados**: Muestra últimos 2 sprints cerrados por tablero además de activos
+- ✨ **Indicadores Visuales**: Estados 🟢 ACTIVO / 🔴 CERRADO en tabla de selección  
+- ✨ **Selección Flexible**: Permite seleccionar sprints cerrados manualmente
+- ✨ **Resumen Mejorado**: Conteo separado de sprints activos vs cerrados
+- ✨ **Ordenamiento Inteligente**: Sprints activos primero, luego cerrados por fecha
+- ✅ **Backward Compatibility**: Script original mantiene comportamiento (solo activos)
+- ✅ **Comportamiento por Defecto**: Enter sigue procesando solo sprints activos
 
 ### v2.0.0 (Refactorización Completa) 🎉
 - ✨ **Arquitectura Modular**: Separación en services, extractors, utils, exporters

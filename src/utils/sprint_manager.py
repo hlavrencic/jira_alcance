@@ -21,13 +21,13 @@ class SprintManager:
     
     def get_active_project_sprints(self, project_key: str) -> List[Dict[str, Any]]:
         """
-        Obtiene todos los sprints activos de todos los boards del proyecto
+        Obtiene sprints activos y los últimos 2 cerrados de todos los boards del proyecto
         
         Args:
             project_key: Clave del proyecto
             
         Returns:
-            Lista de sprints activos ordenados por fecha de creación
+            Lista de sprints (activos + últimos 2 cerrados) ordenados por fecha de creación
         """
         try:
             # Calcular fecha límite para optimización
@@ -45,27 +45,32 @@ class SprintManager:
             
             self.console.print(f"📋 [cyan]Encontrados {len(boards)} boards: {[b['name'] for b in boards]}[/cyan]")
             
-            all_active_sprints = []
+            all_sprints = []
             
-            # Obtener sprints activos de todos los boards
+            # Obtener sprints activos y cerrados de todos los boards
             for board in boards:
                 self.console.print(f"   📊 [dim]Obteniendo sprints del board: {board['name']} (ID: {board['id']})[/dim]")
                 
-                board_sprints = self.jira_service.get_board_sprints(board['id'])
-                board_active_sprints = 0
+                # Obtener sprints activos
+                active_sprints = self.jira_service.get_board_sprints(board['id'], state='active')
+                # Obtener sprints cerrados
+                closed_sprints = self.jira_service.get_board_sprints(board['id'], state='closed')
                 
-                for sprint in board_sprints:
-                    sprint_state = sprint.get('state', '').lower()
+                board_active_sprints = 0
+                board_closed_sprints = 0
+                
+                # Procesar sprints activos
+                for sprint in active_sprints:
                     sprint_created = sprint.get('createdDate', '')
                     sprint_name = sprint.get('name', 'Sin nombre')
                     
                     # Verificar si el sprint fue creado dentro del rango
                     is_recent = self._is_sprint_recent(sprint_created, cutoff_date)
                     
-                    self.console.print(f"   🔍 [dim]Sprint: {sprint_name[:20]} - Estado: {sprint_state} - Reciente: {is_recent}[/dim]")
+                    self.console.print(f"   � [dim]Sprint activo: {sprint_name[:20]} - Reciente: {is_recent}[/dim]")
                     
                     # Solo incluir sprints activos Y recientes
-                    if sprint_state == 'active' and is_recent:
+                    if is_recent:
                         sprint_data = {
                             'id': sprint['id'],
                             'name': sprint['name'],
@@ -74,23 +79,64 @@ class SprintManager:
                             'endDate': sprint.get('endDate', 'No definida'),
                             'goal': sprint.get('goal', 'Sin objetivo'),
                             'board_name': board['name'],
-                            'board_id': board['id']
+                            'board_id': board['id'],
+                            'type': 'active'
                         }
-                        all_active_sprints.append(sprint_data)
+                        all_sprints.append(sprint_data)
                         board_active_sprints += 1
                         self.console.print(f"   ✅ [green]Sprint activo encontrado: {sprint['name']}[/green]")
                 
-                self.console.print(f"   📊 [blue]Board {board['name']}: {board_active_sprints} sprints activos recientes[/blue]")
+                # Procesar sprints cerrados - obtener los 2 más recientes
+                if closed_sprints:
+                    # Filtrar y ordenar sprints cerrados por fecha de finalización
+                    recent_closed = []
+                    for sprint in closed_sprints:
+                        sprint_created = sprint.get('createdDate', '')
+                        sprint_name = sprint.get('name', 'Sin nombre')
+                        
+                        # Solo incluir sprints cerrados recientes
+                        if self._is_sprint_recent(sprint_created, cutoff_date):
+                            recent_closed.append(sprint)
+                    
+                    # Ordenar por fecha de finalización (más recientes primero)
+                    recent_closed.sort(key=lambda x: x.get('completeDate', x.get('endDate', '')), reverse=True)
+                    
+                    # Tomar solo los 2 más recientes
+                    last_2_closed = recent_closed[:2]
+                    
+                    for sprint in last_2_closed:
+                        sprint_name = sprint.get('name', 'Sin nombre')
+                        self.console.print(f"   🔴 [dim]Sprint cerrado reciente: {sprint_name[:20]}[/dim]")
+                        
+                        sprint_data = {
+                            'id': sprint['id'],
+                            'name': sprint['name'],
+                            'state': sprint['state'],
+                            'startDate': sprint.get('startDate', 'No definida'),
+                            'endDate': sprint.get('endDate', 'No definida'),
+                            'completeDate': sprint.get('completeDate', 'No definida'),
+                            'goal': sprint.get('goal', 'Sin objetivo'),
+                            'board_name': board['name'],
+                            'board_id': board['id'],
+                            'type': 'closed'
+                        }
+                        all_sprints.append(sprint_data)
+                        board_closed_sprints += 1
+                        self.console.print(f"   ✅ [blue]Sprint cerrado encontrado: {sprint['name']}[/blue]")
+                
+                self.console.print(f"   📊 [blue]Board {board['name']}: {board_active_sprints} activos, {board_closed_sprints} cerrados recientes[/blue]")
             
             # Mostrar resumen total
-            self.console.print(f"🏁 [bold cyan]TOTAL: {len(all_active_sprints)} sprints activos encontrados en todos los boards[/bold cyan]")
+            active_count = len([s for s in all_sprints if s['type'] == 'active'])
+            closed_count = len([s for s in all_sprints if s['type'] == 'closed'])
+            self.console.print(f"🏁 [bold cyan]TOTAL: {active_count} sprints activos + {closed_count} sprints cerrados = {len(all_sprints)} sprints[/bold cyan]")
             
-            if not all_active_sprints:
-                self.console.print("⚠️ [yellow]No se encontraron sprints activos en ningún board[/yellow]")
+            if not all_sprints:
+                self.console.print("⚠️ [yellow]No se encontraron sprints en ningún board[/yellow]")
                 return []
             
             # Eliminar duplicados y ordenar
-            unique_sprints = self._remove_duplicates_and_sort(all_active_sprints)
+            unique_sprints = self._remove_duplicates_and_sort(all_sprints)
             
             return unique_sprints
             
@@ -100,24 +146,30 @@ class SprintManager:
     
     def display_active_sprints_table(self, sprints: List[Dict[str, Any]]) -> None:
         """
-        Muestra una tabla con los sprints activos disponibles
+        Muestra una tabla con los sprints disponibles (activos y cerrados recientes)
         
         Args:
-            sprints: Lista de sprints activos a mostrar
+            sprints: Lista de sprints a mostrar
         """
         if not sprints:
-            self.console.print("❌ [red]No se encontraron sprints activos[/red]")
+            self.console.print("❌ [red]No se encontraron sprints[/red]")
             return
         
-        table = Table(title="🟢 Sprints Activos Disponibles", show_header=True)
+        # Separar sprints por tipo
+        active_sprints = [s for s in sprints if s.get('type') == 'active']
+        closed_sprints = [s for s in sprints if s.get('type') == 'closed']
+        
+        table = Table(title="� Sprints Disponibles", show_header=True)
         table.add_column("ID", style="blue", width=8)
         table.add_column("Nombre", style="green", width=30)
+        table.add_column("Estado", style="bright_magenta", width=10)
         table.add_column("Board", style="bright_blue", width=20)
         table.add_column("Fecha Inicio", style="magenta", width=12)
         table.add_column("Fecha Fin", style="magenta", width=12)
         table.add_column("Objetivo", style="cyan", width=25)
         
-        for sprint in sprints:
+        # Agregar sprints activos primero
+        for sprint in active_sprints:
             # Formatear fechas
             start_date = self._format_date(sprint['startDate'])
             end_date = self._format_date(sprint['endDate'])
@@ -130,6 +182,28 @@ class SprintManager:
             table.add_row(
                 str(sprint['id']),
                 sprint['name'][:30],
+                "🟢 ACTIVO",
+                sprint['board_name'][:20],
+                start_date,
+                end_date,
+                goal
+            )
+        
+        # Agregar sprints cerrados
+        for sprint in closed_sprints:
+            # Formatear fechas
+            start_date = self._format_date(sprint['startDate'])
+            end_date = self._format_date(sprint.get('completeDate', sprint['endDate']))
+            
+            # Obtener objetivo del sprint
+            goal = sprint.get('goal', 'Sin objetivo')
+            if goal and len(goal) > 25:
+                goal = goal[:22] + "..."
+            
+            table.add_row(
+                str(sprint['id']),
+                sprint['name'][:30],
+                "🔴 CERRADO",
                 sprint['board_name'][:20],
                 start_date,
                 end_date,
@@ -137,30 +211,36 @@ class SprintManager:
             )
         
         self.console.print(table)
+        
+        # Mostrar resumen
+        if active_sprints and closed_sprints:
+            self.console.print(f"\n📊 [cyan]Resumen: {len(active_sprints)} sprints activos + {len(closed_sprints)} sprints cerrados recientes[/cyan]")
     
-    def get_sprint_ids_from_user(self, active_sprints: List[Dict[str, Any]]) -> List[int]:
+    def get_sprint_ids_from_user(self, sprints: List[Dict[str, Any]]) -> List[int]:
         """
         Solicita al usuario que ingrese IDs de sprints o usa los activos por defecto
         
         Args:
-            active_sprints: Lista de sprints activos disponibles
+            sprints: Lista de sprints disponibles (activos y cerrados)
             
         Returns:
             Lista de IDs de sprints a procesar
         """
+        active_sprints = [s for s in sprints if s.get('type') == 'active']
+        
         self.console.print("\n📋 [bold]Selección de Sprints[/bold]")
         self.console.print("Opciones disponibles:")
-        self.console.print("• [cyan]Presiona Enter[/cyan] para procesar todos los sprints activos mostrados")
-        self.console.print("• Ingresa IDs específicos: [cyan]6393,6364,5847[/cyan]")
+        self.console.print("• [cyan]Presiona Enter[/cyan] para procesar solo los sprints activos mostrados")
+        self.console.print("• Ingresa IDs específicos: [cyan]6393,6364,5847[/cyan] (activos o cerrados)")
         self.console.print("• Ingresa un solo ID: [cyan]6393[/cyan]")
         
         while True:
             user_input = Prompt.ask(
-                "\n¿Qué sprints quieres procesar? (Enter = sprints activos)",
+                "\n¿Qué sprints quieres procesar? (Enter = solo sprints activos)",
                 default=""
             ).strip()
             
-            # Si no ingresa nada, usar todos los sprints activos
+            # Si no ingresa nada, usar solo los sprints activos
             if not user_input:
                 if active_sprints:
                     sprint_ids = [sprint['id'] for sprint in active_sprints]
@@ -214,7 +294,7 @@ class SprintManager:
             return True
     
     def _remove_duplicates_and_sort(self, sprints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Elimina duplicados y ordena sprints"""
+        """Elimina duplicados y ordena sprints (activos primero, luego cerrados)"""
         # Eliminar duplicados por ID de sprint
         unique_sprints = {}
         for sprint in sprints:
@@ -222,23 +302,29 @@ class SprintManager:
             if sprint_id not in unique_sprints:
                 unique_sprints[sprint_id] = sprint
             else:
-                # Si ya existe, combinar información de boards
+                # Si ya existe, mantener el que tenga más información
                 existing = unique_sprints[sprint_id]
                 if existing['board_name'] != sprint['board_name']:
                     existing['board_name'] = f"{existing['board_name']} (+{sprint['board_name']})"
         
         # Convertir de vuelta a lista
-        unique_active_sprints = list(unique_sprints.values())
+        unique_sprints_list = list(unique_sprints.values())
         
-        duplicates_removed = len(sprints) - len(unique_active_sprints)
+        duplicates_removed = len(sprints) - len(unique_sprints_list)
         if duplicates_removed > 0:
             self.console.print(f"🔄 [yellow]Sprints duplicados eliminados: {duplicates_removed}[/yellow]")
-            self.console.print(f"📊 [cyan]Sprints únicos: {len(unique_active_sprints)}[/cyan]")
+            self.console.print(f"📊 [cyan]Sprints únicos: {len(unique_sprints_list)}[/cyan]")
         
-        # Ordenar por ID (los IDs más altos son más recientes)
-        unique_active_sprints.sort(key=lambda x: x['id'], reverse=True)
+        # Ordenar: sprints activos primero, luego cerrados, ambos por ID descendente
+        def sort_key(sprint):
+            # Prioridad: activos (0) antes que cerrados (1)
+            priority = 0 if sprint.get('type') == 'active' else 1
+            # Dentro de cada tipo, ordenar por ID descendente (más recientes primero)
+            return (priority, -sprint['id'])
         
-        return unique_active_sprints
+        unique_sprints_list.sort(key=sort_key)
+        
+        return unique_sprints_list
     
     def _format_date(self, date_str: str) -> str:
         """Formatea una fecha ISO a formato legible"""
@@ -253,14 +339,16 @@ class SprintManager:
     def _show_selected_sprints(self, sprints: List[Dict[str, Any]]) -> None:
         """Muestra los sprints seleccionados"""
         for sprint in sprints:
-            self.console.print(f"  🟢 [green]{sprint['name']} (ID: {sprint['id']}) [{sprint['board_name']}][/green]")
+            status_icon = "🟢" if sprint.get('type') == 'active' else "🔴"
+            status_text = "ACTIVO" if sprint.get('type') == 'active' else "CERRADO"
+            self.console.print(f"  {status_icon} [green]{sprint['name']} (ID: {sprint['id']}) [{sprint['board_name']}] - {status_text}[/green]")
     
     def _show_sprint_confirmation_table(self, sprint_ids: List[int], sprint_details: List[Dict[str, Any]]) -> None:
         """Muestra tabla de confirmación de sprints"""
         confirmation_table = Table(title="🔍 Sprints Seleccionados para Confirmación", show_header=True)
         confirmation_table.add_column("ID", style="blue", width=8)
         confirmation_table.add_column("Nombre", style="green", width=30)
-        confirmation_table.add_column("Estado", style="yellow", width=10)
+        confirmation_table.add_column("Estado", style="bright_magenta", width=12)
         confirmation_table.add_column("Fecha Inicio", style="magenta", width=12)
         confirmation_table.add_column("Fecha Fin", style="magenta", width=12)
         confirmation_table.add_column("Objetivo", style="cyan", width=25)
@@ -274,10 +362,19 @@ class SprintManager:
                 detail = details_dict[sprint_id]
                 sprints_found += 1
                 
+                # Determinar estado y icono
+                state = detail.get('state', 'N/A').lower()
+                if state == 'active':
+                    state_display = "🟢 ACTIVO"
+                elif state == 'closed':
+                    state_display = "🔴 CERRADO"
+                else:
+                    state_display = f"🔵 {state.upper()}"
+                
                 confirmation_table.add_row(
                     str(sprint_id),
                     detail.get('name', 'Sin nombre')[:30],
-                    detail.get('state', 'N/A'),
+                    state_display,
                     self._format_date(detail.get('startDate', 'No definida')),
                     self._format_date(detail.get('endDate', 'No definida')),
                     (detail.get('goal', 'Sin objetivo')[:22] + "...") if len(detail.get('goal', '')) > 25 else detail.get('goal', 'Sin objetivo'),
@@ -287,7 +384,7 @@ class SprintManager:
                 confirmation_table.add_row(
                     str(sprint_id),
                     "Sprint no encontrado",
-                    "N/A",
+                    "❌ N/A",
                     "N/A",
                     "N/A",
                     "N/A",

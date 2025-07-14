@@ -101,16 +101,16 @@ class JiraDataExtractor:
     
     def _get_sprint_issues(self, project_key: str, max_results: int = None) -> List[Any]:
         """Obtiene issues de sprints seleccionados"""
-        # Obtener sprints activos
-        self.jira_service.console.print("🏃‍♂️ [cyan]Obteniendo sprints activos del proyecto...[/cyan]")
-        active_sprints = self.sprint_manager.get_active_project_sprints(project_key)
+        # Obtener sprints activos y cerrados recientes
+        self.jira_service.console.print("🏃‍♂️ [cyan]Obteniendo sprints activos y cerrados recientes del proyecto...[/cyan]")
+        available_sprints = self.sprint_manager.get_active_project_sprints(project_key)
         
-        # Mostrar tabla de sprints activos
-        if active_sprints:
-            self.sprint_manager.display_active_sprints_table(active_sprints)
+        # Mostrar tabla de sprints disponibles
+        if available_sprints:
+            self.sprint_manager.display_active_sprints_table(available_sprints)
         
         # Obtener IDs de sprints del usuario
-        sprint_ids = self.sprint_manager.get_sprint_ids_from_user(active_sprints)
+        sprint_ids = self.sprint_manager.get_sprint_ids_from_user(available_sprints)
         
         if not sprint_ids:
             self.jira_service.console.print("❌ [red]No se seleccionaron sprints para procesar[/red]")
