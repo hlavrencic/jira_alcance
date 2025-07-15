@@ -166,6 +166,13 @@ class JiraDataExtractor:
         """Busca issues de sprints específicos"""
         self.jira_service.console.print(f"🔍 [cyan]Buscando issues de {len(sprint_ids)} sprint(s)...[/cyan]")
         
+        # Obtener información detallada de los sprints seleccionados
+        available_sprints = self.sprint_manager.get_active_project_sprints(project_key)
+        selected_sprints = {s['id']: s for s in available_sprints if s['id'] in sprint_ids}
+        
+        # Pasar la información de sprints al extractor de estructura
+        self.structure_extractor.set_sprint_context(selected_sprints)
+        
         # Configuración
         extract_all = EXTRACTION_CONFIG['extract_all_issues'] and max_results is None
         safety_limit = max_results or EXTRACTION_CONFIG['max_issues_fallback']
